@@ -1,6 +1,6 @@
 [package]
 name = "opencad-block-attributes"
-version = "0.1.0"
+version = "0.1.3"
 edition = "2021"
 description = "Block attribute data extraction for Open CAD Studio."
 license = "GPL-3.0-only"
