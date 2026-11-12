@@ -9,6 +9,6 @@ license = "GPL-3.0-only"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Pin to the OCS commit of the host release you target (this one = API 15).
+# Pin to the OCS commit of the host release you target (this one = API 16).
 # Codec types are re-exported by ocs_plugin_api; do not add an acadrust dep.
-ocs_plugin_api = { git = "https://github.com/HakanSeven12/OpenCADStudio", rev = "87f174f96ebad233d3ecdcced6df7a486ddd0969", features = ["host"] }
+ocs_plugin_api = { git = "https://github.com/HakanSeven12/OpenCADStudio", rev = "90af1091d38b0c934014bf96ba18f2d4ea7625fb", features = ["host"] }
