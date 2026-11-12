@@ -1,0 +1,14 @@
+[package]
+name = "opencad-block-attributes"
+version = "0.1.0"
+edition = "2021"
+description = "Block attribute data extraction for Open CAD Studio."
+license = "GPL-3.0-only"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pin to the OCS commit of the host release you target (this one = API 15).
+# Codec types are re-exported by ocs_plugin_api; do not add an acadrust dep.
+ocs_plugin_api = { git = "https://github.com/HakanSeven12/OpenCADStudio", rev = "87f174f96ebad233d3ecdcced6df7a486ddd0969", features = ["host"] }
