@@ -1,7 +1,7 @@
 [plugin]
 id = "opencad.block_attributes"
 name = "Block Attributes"
-version = "0.1.0"
+version = "0.1.3"
 description = "Extract block attribute data to CSV."
 license = "GPL-3.0-only"
 repository = "BeeBeeSix/OCS_MyPlugin_BATX"
