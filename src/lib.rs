@@ -1,5 +1,7 @@
 //! Block attribute extraction for Open CAD Studio.
 //!
+//! With an active selection, only the selected INSERTs are processed.
+//!
 //! BA_LIST   - print every INSERT's attributes to the command line.
 //! BA_EXPORT - write a CSV (one row per INSERT: handle, block, layer,
 //!             insertion point X/Y/Z, then one column per tag).
@@ -10,6 +12,7 @@ use ocs_plugin_api::export_plugin;
 use ocs_plugin_api::host::{BuiltinPlugin, EntityType, HostApi};
 use ocs_plugin_api::manifest::{ApiVersion, PluginManifest};
 use ocs_plugin_api::ribbon::{CadModule, IconKind, ModuleEvent, RibbonGroup, RibbonItem, ToolDef};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 static MANIFEST: PluginManifest = PluginManifest {
@@ -33,11 +36,17 @@ struct Row {
     attrs: Vec<(String, String)>, // (tag, value) in file order
 }
 
-/// Read every INSERT and its attributes from the cached document copy.
-fn collect(host: &dyn HostApi) -> Vec<Row> {
-    host.document()
+/// Read INSERTs and their attributes from the cached document copy.
+/// If a selection is active, only selected INSERTs are returned;
+/// with no selection, every INSERT is. The bool is true when filtered.
+fn collect(host: &dyn HostApi) -> (Vec<Row>, bool) {
+    let selected: HashSet<_> = host.selection().into_iter().collect();
+    let filtered = !selected.is_empty();
+    let rows = host
+        .document()
         .entities()
         .filter_map(|e| match e {
+            EntityType::Insert(ins) if filtered && !selected.contains(&ins.common.handle) => None,
             EntityType::Insert(ins) => Some(Row {
                 handle: ins.common.handle.to_string(), // ASSUMED field path
                 block: ins.block_name.clone(),
@@ -53,7 +62,8 @@ fn collect(host: &dyn HostApi) -> Vec<Row> {
             }),
             _ => None,
         })
-        .collect()
+        .collect();
+    (rows, filtered)
 }
 
 fn csv_field(s: &str) -> String {
@@ -123,8 +133,12 @@ impl BuiltinPlugin for BlockAttrPlugin {
         };
         match name {
             "BA_LIST" => {
-                let rows = collect(host);
-                host.push_info(&format!("{} block reference(s)", rows.len()));
+                let (rows, filtered) = collect(host);
+                host.push_info(&format!(
+                    "{} block reference(s){}",
+                    rows.len(),
+                    if filtered { " (selection)" } else { "" }
+                ));
                 for r in &rows {
                     let a: Vec<String> =
                         r.attrs.iter().map(|(t, v)| format!("{t}={v}")).collect();
@@ -133,7 +147,7 @@ impl BuiltinPlugin for BlockAttrPlugin {
                 true
             }
             "BA_EXPORT" => {
-                let rows = collect(host);
+                let (rows, filtered) = collect(host);
                 let path = if arg.is_empty() {
                     default_path(host)
                 } else {
@@ -143,8 +157,9 @@ impl BuiltinPlugin for BlockAttrPlugin {
                     None => host.push_error("Drawing is unsaved: save it or run BA_EXPORT <path>"),
                     Some(p) => match std::fs::write(&p, to_csv(&rows)) {
                         Ok(()) => host.push_info(&format!(
-                            "Wrote {} row(s) to {}",
+                            "Wrote {} row(s){} to {}",
                             rows.len(),
+                            if filtered { " (selection)" } else { "" },
                             p.display()
                         )),
                         Err(e) => host.push_error(&format!("Write failed: {e}")),
