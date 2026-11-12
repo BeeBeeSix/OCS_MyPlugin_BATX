@@ -1,7 +1,8 @@
 //! Block attribute extraction for Open CAD Studio.
 //!
 //! BA_LIST   - print every INSERT's attributes to the command line.
-//! BA_EXPORT - write a CSV (one row per INSERT, one column per tag).
+//! BA_EXPORT - write a CSV (one row per INSERT: handle, block, layer,
+//!             insertion point X/Y/Z, then one column per tag).
 //!             `BA_EXPORT <path>` writes there; bare `BA_EXPORT` writes
 //!             <drawing>.attributes.csv next to the saved drawing.
 
@@ -26,6 +27,9 @@ struct Row {
     handle: String,
     block: String,
     layer: String,
+    x: f64,
+    y: f64,
+    z: f64,
     attrs: Vec<(String, String)>, // (tag, value) in file order
 }
 
@@ -38,6 +42,9 @@ fn collect(host: &dyn HostApi) -> Vec<Row> {
                 handle: ins.common.handle.to_string(), // ASSUMED field path
                 block: ins.block_name.clone(),
                 layer: ins.common.layer.clone(),
+                x: ins.insert_point.x,
+                y: ins.insert_point.y,
+                z: ins.insert_point.z,
                 attrs: ins
                     .attributes
                     .iter()
@@ -67,7 +74,7 @@ fn to_csv(rows: &[Row]) -> String {
             }
         }
     }
-    let mut out = String::from("Handle,Block,Layer");
+    let mut out = String::from("Handle,Block,Layer,X,Y,Z");
     for t in &tags {
         out.push(',');
         out.push_str(&csv_field(t));
@@ -75,10 +82,13 @@ fn to_csv(rows: &[Row]) -> String {
     out.push('\n');
     for r in rows {
         out.push_str(&format!(
-            "{},{},{}",
+            "{},{},{},{},{},{}",
             csv_field(&r.handle),
             csv_field(&r.block),
-            csv_field(&r.layer)
+            csv_field(&r.layer),
+            r.x,
+            r.y,
+            r.z
         ));
         for t in &tags {
             let v = r.attrs.iter().find(|(k, _)| k == t).map(|(_, v)| v.as_str());
