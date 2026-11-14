@@ -1,4 +1,7 @@
-name: release
+# Push a tag `v*` to publish a release the Open CAD Studio Plugin Manager
+# can install: one library per platform (the platform in the asset name)
+# plus plugin.toml.
+name: Release
 
 on:
   push:
@@ -14,27 +17,90 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            ext: so
+            lib: libopencad_block_attributes.so
             asset: opencad.block_attributes-linux-x86_64.so
           - os: windows-latest
-            ext: dll
+            lib: opencad_block_attributes.dll
             asset: opencad.block_attributes-windows-x86_64.dll
           - os: macos-latest
-            ext: dylib
+            lib: libopencad_block_attributes.dylib
             asset: opencad.block_attributes-macos-aarch64.dylib
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned toolchain
+        shell: bash
+        run: |
+          if [ -f rust-toolchain.toml ]; then
+            rustup toolchain install "$(grep -m1 '^channel' rust-toolchain.toml | cut -d'"' -f2)" --profile minimal
+          else
+            rustup toolchain install stable --profile minimal
+          fi
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
       - run: cargo build --release
-      - name: Stage release asset
+      - name: Stage asset
         shell: bash
         run: |
           mkdir -p dist
-          cp target/release/*.${{ matrix.ext }} "dist/${{ matrix.asset }}"
-          cp plugin.toml dist/plugin.toml
-      - uses: softprops/action-gh-release@v2
+          cp "target/release/${{ matrix.lib }}" "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
         with:
-          files: |
-            dist/${{ matrix.asset }}
-            dist/plugin.toml
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Check versions match the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          p=$(grep -m1 '^version' plugin.toml | cut -d'"' -f2)
+          c=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          [ "$p" = "$tag" ] || { echo "::error::plugin.toml version $p != tag $GITHUB_REF_NAME"; exit 1; }
+          [ "$c" = "$tag" ] || { echo "::error::Cargo.toml version $c != tag $GITHUB_REF_NAME"; exit 1; }
+      - name: Release notes from CHANGELOG.md
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ -f CHANGELOG.md ]; then
+            # The lines between "## [<version>]" and the next "## [" heading.
+            awk -v v="$tag" '
+              index($0, "## [" v "]") == 1 { on = 1; next }
+              on && /^## \[/ { exit }
+              on { print }
+            ' CHANGELOG.md | tr -d '\r' | sed '/./,$!d' > notes.md
+            if [ ! -s notes.md ]; then
+              echo "::error::CHANGELOG.md has no section '## [$tag]'"
+              exit 1
+            fi
+          else
+            echo "Block Attributes ${GITHUB_REF_NAME}" > notes.md
+          fi
+          {
+            echo
+            echo "---"
+            echo "**Install:** in Open CAD Studio, run \`PLUGINS\` → *Add repository* → \`${GITHUB_REPOSITORY}\` → choose **${GITHUB_REF_NAME}** → *Install*, then restart."
+          } >> notes.md
+          cat notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dist
+          cp artifacts/*/* dist/
+          cp plugin.toml dist/
+          # Versions 0.x are marked as test versions in the title.
+          title="Block Attributes ${GITHUB_REF_NAME}"
+          case "$GITHUB_REF_NAME" in v0.*) title="$title (test version)";; esac
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            # Re-run for a tag that already has a release: refresh it instead of failing.
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+            gh release edit "${GITHUB_REF_NAME}" --title "$title" --notes-file notes.md --latest
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* --title "$title" --notes-file notes.md --latest
+          fi
