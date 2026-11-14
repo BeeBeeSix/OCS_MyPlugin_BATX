@@ -1,0 +1,1 @@
+powershell -ExecutionPolicy Bypass -File scripts\release.ps1 0.1.5
